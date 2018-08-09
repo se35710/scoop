@@ -1,11 +1,11 @@
 {
     "homepage": "http://www.vim.org",
     "license": "Vim",
-    "version": "8.1.0229",
+    "version": "8.1.0258",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/vim/vim-win32-installer/releases/download/v8.1.0229/gvim_8.1.0229_x64.zip",
-            "hash": "5ab12c3bf1556b2af7fa9c36fabb703f0b2b9b8376c6b8da69ce99ace1b20dbd"
+            "url": "https://github.com/vim/vim-win32-installer/releases/download/v8.1.0258/gvim_8.1.0258_x64.zip",
+            "hash": "abdef3f0a0ee3382e820c08da00a831e68888977e8f799cbbb63e0ad36b7f771"
         }
     },
     "extract_dir": "vim\\vim81",
@@ -70,7 +70,8 @@
             "gvim.exe",
             "gvimdiff",
             "-d"
-        ]
+        ],
+        "xxd.exe"
     ],
     "shortcuts": [
         [

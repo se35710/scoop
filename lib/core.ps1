@@ -49,7 +49,13 @@ function abort($msg, [int] $exit_code=1) { write-host $msg -f red; exit $exit_co
 function error($msg) { write-host "ERROR $msg" -f darkred }
 function warn($msg) {  write-host "WARN  $msg" -f darkyellow }
 function info($msg) {  write-host "INFO  $msg" -f darkgray }
-function debug($msg) { write-host "DEBUG $msg" -f darkcyan }
+function debug($msg, $indent = $false) {
+    if($indent) {
+        write-host "    DEBUG $msg" -f darkcyan
+    } else {
+        write-host "DEBUG $msg" -f darkcyan
+    }
+}
 function success($msg) { write-host $msg -f darkgreen }
 
 function filesize($length) {
@@ -94,6 +100,43 @@ function installed_apps($global) {
     if(test-path $dir) {
         Get-ChildItem $dir | Where-Object { $_.psiscontainer -and $_.name -ne 'scoop' } | ForEach-Object { $_.name }
     }
+}
+
+function file_path($app, $file) {
+    # normal path to file
+    $path = "$(versiondir $app 'current' $false)\$file"
+    if(Test-Path($path)) {
+        return $path
+    }
+
+    # global path to file
+    $path = "$(versiondir $app 'current' $true)\$file"
+    if(Test-Path($path)) {
+        return $path
+    }
+
+    # not found
+    return $null
+}
+
+function 7zip_path() {
+    return (file_path '7zip' '7z.exe')
+}
+
+function 7zip_installed() {
+    return ![String]::IsNullOrWhiteSpace("$(7zip_path)")
+}
+
+function aria2_path() {
+    return (file_path 'aria2' 'aria2c.exe')
+}
+
+function aria2_installed() {
+    return ![String]::IsNullOrWhiteSpace("$(aria2_path)")
+}
+
+function aria2_enabled() {
+    return (aria2_installed) -and (get_config 'aria2-enabled' $true)
 }
 
 function app_status($app, $global) {
@@ -229,6 +272,13 @@ function unzip($path, $to) {
             return
         } else {
             abort "Unzip failed: Windows can't handle the long paths in this zip file.`nRun 'scoop install 7zip' and try again."
+        }
+    } catch [system.io.ioexception] {
+        if (7zip_installed) {
+            extract_7zip $path $to $false
+            return
+        } else {
+            abort "Unzip failed: Windows can't handle the file names in this zip file.`nRun 'scoop install 7zip' and try again."
         }
     } catch {
         abort "Unzip failed: $_"
@@ -541,14 +591,22 @@ function last_scoop_update() {
     if(!$last_update) {
         $last_update = [System.DateTime]::Now
     }
-    return $last_update.ToLocalTime()
+
+    if($last_update.GetType() -eq [System.String]) {
+        try {
+            $last_update = [System.DateTime]::Parse($last_update)
+        } catch {
+            $last_update = [System.DateTime]::Now
+        }
+    }
+    return $last_update
 }
 
 function is_scoop_outdated() {
     $last_update = $(last_scoop_update)
     $now = [System.DateTime]::Now
     if($last_update -eq $now) {
-        scoop config lastupdate $now
+        scoop config lastupdate $now.ToString('o')
         # enforce an update for the first time
         return $true
     }
@@ -579,6 +637,19 @@ function format_hash([String] $hash) {
     return $hash
 }
 
+function format_hash_aria2([String] $hash) {
+    $hash = $hash -split ':' | Select-Object -Last 1
+    switch ($hash.Length)
+    {
+        32 { $hash = "md5=$hash" } # md5
+        40 { $hash = "sha-1=$hash" } # sha1
+        64 { $hash = "sha-256=$hash" } # sha256
+        128 { $hash = "sha-512=$hash" } # sha512
+        default { $hash = $null }
+    }
+    return $hash
+}
+
 function handle_special_urls($url)
 {
     # FossHub.com
@@ -589,6 +660,12 @@ function handle_special_urls($url)
         # the key is a random 24 chars long hex string, so lets use ' SCOOPSCOOP ' :)
         $url = "https://www.fosshub.com/gensLink/$name/$filename/2053434f4f5053434f4f5020"
         $url = (Invoke-WebRequest -Uri $url | Select-Object -ExpandProperty Content)
+    }
+
+    # Sourceforge.net
+    if ($url -match "(?:downloads\.)?sourceforge.net\/projects?\/(?<project>[^\/]+)\/(?:files\/)?(?<file>.*?)(?:$|\/download|\?)") {
+        # Reshapes the URL to avoid redirections
+        $url = "https://downloads.sourceforge.net/project/$($matches['project'])/$($matches['file'])"
     }
     return $url
 }
