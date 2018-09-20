@@ -55,6 +55,7 @@ function install_app($app, $architecture, $global, $suggested, $use_cache = $tru
 
     # persist data
     persist_data $manifest $original_dir $persist_dir
+    persist_permission $manifest $global
 
     post_install $manifest $architecture
 
@@ -189,6 +190,31 @@ function aria_exit_code($exitcode) {
     return $codes[$exitcode]
 }
 
+function get_filename_from_metalink($file) {
+    $bytes = get_magic_bytes_pretty $file ''
+    # check if file starts with '<?xml'
+    if(!($bytes.StartsWith('3c3f786d6c'))) {
+        return $null
+    }
+
+    # Add System.Xml for reading metalink files
+    Add-Type -AssemblyName 'System.Xml'
+    $xr = [System.Xml.XmlReader]::Create($file)
+    $filename = $null
+    try {
+        $xr.ReadStartElement('metalink')
+        if($xr.ReadToFollowing('file') -and $xr.MoveToFirstAttribute()) {
+            $filename = $xr.Value
+        }
+    } catch [System.Xml.XmlException] {
+        return $null
+    } finally {
+        $xr.Close()
+    }
+
+    return $filename
+}
+
 function dl_with_cache_aria2($app, $version, $manifest, $architecture, $dir, $cookies = $null, $use_cache = $true, $check_hash = $true) {
     $data = @{}
     $urls = @(url $manifest $architecture)
@@ -211,6 +237,11 @@ function dl_with_cache_aria2($app, $version, $manifest, $architecture, $dir, $co
         "--console-log-level=warn"
         "--enable-color=false"
         "--no-conf=true"
+        "--follow-metalink=true"
+        "--metalink-preferred-protocol=https"
+        "--min-tls-version=TLSv1.2"
+        "--stop-with-process=$PID"
+        "--continue"
     )
 
     if($cookies) {
@@ -299,6 +330,12 @@ function dl_with_cache_aria2($app, $version, $manifest, $architecture, $dir, $co
 
     foreach($url in $urls) {
 
+        $metalink_filename = get_filename_from_metalink $data.$url.source
+        if($metalink_filename) {
+            Remove-Item $data.$url.source -Force
+            Rename-Item -Force (Join-Path -Path $cachedir -ChildPath $metalink_filename) $data.$url.source
+        }
+
         # run hash checks
         if($check_hash) {
             $manifest_hash = hash_for_url $manifest $url $architecture
@@ -330,7 +367,8 @@ function dl_with_cache_aria2($app, $version, $manifest, $architecture, $dir, $co
 
 # download with filesize and progress indicator
 function dl($url, $to, $cookies, $progress) {
-    $wreq = [net.webrequest]::create($url)
+    $reqUrl = ($url -split "#")[0]
+    $wreq = [net.webrequest]::create($reqUrl)
     if($wreq -is [net.httpwebrequest]) {
         $wreq.useragent = Get-UserAgent
         if (-not ($url -imatch "sourceforge\.net")) {
@@ -652,9 +690,7 @@ function check_hash($file, $hash, $app_name) {
         $msg += "App:         $app_name`n"
         $msg += "URL:         $url`n"
         if(Test-Path $file) {
-            $hexbytes = Get-Content $file -Encoding byte -TotalCount 8 | ForEach-Object { $_.tostring('x2') }
-            $hexbytes = [string]::join(' ', $hexbytes).ToUpper()
-            $msg += "First bytes: $hexbytes`n"
+            $msg += "First bytes: $((get_magic_bytes_pretty $file ' ').ToUpper())`n"
         }
         if($expected -or $actual) {
             $msg += "Expected:    $expected`n"
@@ -1218,5 +1254,17 @@ function persist_data($manifest, $original_dir, $persist_dir) {
                 & "$env:COMSPEC" /c "mklink /h `"$source`" `"$target`"" | out-null
             }
         }
+    }
+}
+
+# check whether write permission for Users usergroup is set to global persist dir, if not then set
+function persist_permission($manifest, $global) {
+    if($global -and $manifest.persist -and (is_admin)) {
+        $path = persistdir $null $global
+        $user = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-545'
+        $target_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, 'Write', 'ObjectInherit', 'none', 'Allow')
+        $acl = Get-Acl -Path $path
+        $acl.SetAccessRule($target_rule)
+        $acl | Set-Acl -Path $path
     }
 }

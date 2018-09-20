@@ -32,9 +32,9 @@ if($app) { $search = $app }
 # get apps to check
 $queue = @()
 Get-ChildItem $dir "$search.json" | ForEach-Object {
-    $json = parse_json "$dir\$_"
+    $json = parse_json "$dir\$($_.Name)"
     if($json.checkver) {
-        $queue += ,@($_, $json)
+        $queue += ,@($_.Name, $json)
     }
 }
 
@@ -47,11 +47,17 @@ $original = use_any_https_protocol
 
 # start all downloads
 $queue | ForEach-Object {
-    $wc = New-Object Net.Webclient
-    $wc.Headers.Add('User-Agent', (Get-UserAgent))
-    register-objectevent $wc downloadstringcompleted -ea stop | out-null
-
     $name, $json = $_
+
+    $substitutions = get_version_substitutions $json.version
+
+    $wc = New-Object Net.Webclient
+    if($json.checkver.useragent) {
+        $wc.Headers.Add('User-Agent', (substitute $json.checkver.useragent $substitutions))
+    } else {
+        $wc.Headers.Add('User-Agent', (Get-UserAgent))
+    }
+    Register-ObjectEvent $wc downloadstringcompleted -ErrorAction stop | Out-Null
 
     $githubRegex = "\/releases\/tag\/(?:v)?([\d.]+)"
 
@@ -79,9 +85,15 @@ $queue | ForEach-Object {
     if($json.checkver.re) {
         $regex = $json.checkver.re
     }
+    if($json.checkver.regex) {
+        $regex = $json.checkver.regex
+    }
 
     if($json.checkver.jp) {
         $jsonpath = $json.checkver.jp
+    }
+    if($json.checkver.jsonpath) {
+        $jsonpath = $json.checkver.jsonpath
     }
 
     if ($json.checkver.replace -and $json.checkver.replace.GetType() -eq [System.String]) {
@@ -93,6 +105,8 @@ $queue | ForEach-Object {
     }
 
     $reverse = $json.checkver.reverse -and $json.checkver.reverse -eq "true"
+
+    $url = substitute $url $substitutions
 
     $state = new-object psobject @{
         app = (strip_ext $name);
@@ -221,29 +235,3 @@ while($in_progress -gt 0) {
 }
 
 set_https_protocols $original
-
-<#
-write-host "checking $(strip_ext (fname $_))..." -nonewline
-$expected_ver = $json.version
-
-$url = $json.checkver.url
-if(!$url) { $url = $json.homepage }
-
-$regexp = $json.checkver.re
-if(!$regexp) { $regexp = $json.checkver }
-
-$page = $wc.downloadstring($url)
-
-if($page -match $regexp) {
-    $ver = $matches[1]
-    if($ver -eq $expected_ver) {
-        write-host "$ver" -f darkgreen
-    } else {
-        write-host "$ver" -f darkred -nonewline
-        write-host " (scoop version is $expected_ver)"
-    }
-
-} else {
-    write-host "couldn't match '$regexp' in $url" -f darkred
-}
-#>

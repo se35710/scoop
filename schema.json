@@ -27,9 +27,19 @@
             "properties": {
                 "find": {
                     "format": "regex",
+                    "type": "string",
+                    "description": "Same as 'regex'"
+                },
+                "regex": {
+                    "format": "regex",
                     "type": "string"
                 },
                 "jp": {
+                    "pattern": "^\\$\\..*$",
+                    "type": "string",
+                    "description": "Same as 'jsonpath'"
+                },
+                "jsonpath": {
                     "pattern": "^\\$\\..*$",
                     "type": "string"
                 },
@@ -239,6 +249,11 @@
                         },
                         "re": {
                             "format": "regex",
+                            "type": "string",
+                            "description": "Same as 'regex'"
+                        },
+                        "regex": {
+                            "format": "regex",
                             "type": "string"
                         },
                         "url": {
@@ -246,6 +261,11 @@
                             "type": "string"
                         },
                         "jp": {
+                            "pattern": "^\\$\\..*$",
+                            "type": "string",
+                            "description": "Same as 'jsonpath'"
+                        },
+                        "jsonpath": {
                             "pattern": "^\\$\\..*$",
                             "type": "string"
                         },
@@ -255,6 +275,9 @@
                         },
                         "replace": {
                             "description": "Allows rearrange the regexp matches",
+                            "type": "string"
+                        },
+                        "useragent": {
                             "type": "string"
                         }
                     },
